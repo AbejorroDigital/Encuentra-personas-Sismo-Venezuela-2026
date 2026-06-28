@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="description" content="Sistema de búsqueda de personas hospitalizadas tras el Terremoto de Venezuela 2026. Permite a familiares y rescatistas localizar rápidamente a pacientes en centros de salud." />
+  <title>🆘 Buscador de Personas — Sismo La Guaira 2026</title>
+
+  <!-- SheetJS for Excel reading -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+  <!-- Auto-carga: si la app corre en servidor local, intenta cargar el Excel automáticamente -->
+  <script>
+    const AUTO_EXCEL_NAME = 'Terremoto Venezuela - Consolidado de personas de todos los archivos.xlsx';
+    window.addEventListener('load', () => {
+      // Solo intentar auto-carga si NO es file:// (es decir, corre en servidor HTTP)
+      if (window.location.protocol !== 'file:') {
+        const autoUrl = encodeURIComponent(AUTO_EXCEL_NAME);
+        fetch(autoUrl)
+          .then(r => {
+            if (!r.ok) throw new Error('No encontrado');
+            return r.blob();
+          })
+          .then(blob => {
+            const file = new File([blob], AUTO_EXCEL_NAME, {
+              type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            });
+            // Esperar a que loadExcel esté disponible
+            if (typeof loadExcel === 'function') {
+              loadExcel(file);
+            }
+          })
+          .catch(() => {
+            // Silencioso: si el archivo no está disponible, el usuario lo carga manualmente
+          });
+      }
+    });
+  </script>
+
+  <style>
+    /* ─── DESIGN TOKENS ─── */
+    :root {
+      --red:        #e63946;
+      --red-dark:   #c1121f;
+      --red-dim:    rgba(230,57,70,0.18);
+      --orange:     #f4a261;
+      --amber:      #f9c74f;
+      --green:      #38b000;
+      --green-dim:  rgba(56,176,0,0.15);
+      --blue:       #4361ee;
+      --gray-900:   #0d0e12;
+      --gray-800:   #14151c;
+      --gray-750:   #1a1c25;
+      --gray-700:   #21232e;
+      --gray-600:   #2e3044;
+      --gray-500:   #3d4166;
+      --gray-300:   #8b8fa8;
+      --gray-100:   #c8cad9;
+      --white:      #f0f2ff;
+      --font:       'Inter', system-ui, -apple-system, sans-serif;
+      --radius:     12px;
+      --radius-sm:  8px;
+      --shadow:     0 4px 24px rgba(0,0,0,0.4);
+      --transition: 0.18s ease;
+    }
+
+    /* ─── RESET & BASE ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      background: var(--gray-900);
+      color: var(--white);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ─── HEADER / BANNER DE EMERGENCIA ─── */
+    header {
+      background: linear-gradient(135deg, #6b0000 0%, var(--red-dark) 40%, #900000 100%);
+      padding: 14px 16px 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.6);
+      border-bottom: 2px solid var(--red);
+    }
+    .header-icon {
+      font-size: 2rem;
+      line-height: 1;
+      flex-shrink: 0;
+      animation: pulse-icon 2s ease-in-out infinite;
+    }
+    @keyframes pulse-icon {
+      0%,100% { transform: scale(1); }
+      50%      { transform: scale(1.12); }
+    }
+    .header-text h1 {
+      font-size: clamp(0.95rem, 4vw, 1.2rem);
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      line-height: 1.1;
+    }
+    .header-text p {
+      font-size: clamp(0.65rem, 2.5vw, 0.78rem);
+      color: rgba(255,255,255,0.75);
+      margin-top: 2px;
+    }
+    .header-badge {
+      margin-left: auto;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 20px;
+      padding: 4px 10px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      white-space: nowrap;
+      color: #fff;
+    }
+
+    /* ─── MAIN LAYOUT ─── */
+    main {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 16px 12px 80px;
+    }
+
+    /* ─── UPLOAD ZONE ─── */
+    .upload-section {
+      background: var(--gray-750);
+      border: 2px dashed var(--gray-500);
+      border-radius: var(--radius);
+      padding: 20px 16px;
+      text-align: center;
+      margin-bottom: 16px;
+      transition: border-color var(--transition), background var(--transition);
+      cursor: pointer;
+      position: relative;
+    }
+    .upload-section.dragover {
+      border-color: var(--orange);
+      background: rgba(244,162,97,0.08);
+    }
+    .upload-section.loaded {
+      border-style: solid;
+      border-color: var(--green);
+      background: var(--green-dim);
+    }
+    .upload-section input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .upload-icon { font-size: 2rem; margin-bottom: 6px; }
+    .upload-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--white);
+    }
+    .upload-sub {
+      font-size: 0.75rem;
+      color: var(--gray-300);
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+    #load-status {
+      margin-top: 10px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--green);
+      display: none;
+    }
+
+    /* ─── SEARCH BOX ─── */
+    .search-wrap {
+      position: relative;
+      margin-bottom: 12px;
+    }
+    .search-icon {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 1.2rem;
+      pointer-events: none;
+      opacity: 0.6;
+    }
+    #search-input {
+      width: 100%;
+      background: var(--gray-700);
+      border: 2px solid var(--gray-500);
+      border-radius: var(--radius);
+      color: var(--white);
+      font-family: var(--font);
+      font-size: clamp(0.95rem, 3.5vw, 1.15rem);
+      font-weight: 500;
+      padding: 14px 44px 14px 44px;
+      outline: none;
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    #search-input::placeholder { color: var(--gray-300); }
+    #search-input:focus {
+      border-color: var(--red);
+      box-shadow: 0 0 0 3px var(--red-dim);
+    }
+    .clear-btn {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--gray-300);
+      font-size: 1.1rem;
+      cursor: pointer;
+      padding: 4px;
+      display: none;
+      line-height: 1;
+    }
+    .clear-btn:hover { color: var(--white); }
+
+    /* ─── HOSPITAL FILTERS ─── */
+    .filters-wrap {
+      margin-bottom: 14px;
+    }
+    .filters-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--gray-300);
+      margin-bottom: 8px;
+    }
+    .filters-scroll {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--gray-600) transparent;
+    }
+    .filter-btn {
+      flex-shrink: 0;
+      background: var(--gray-700);
+      border: 1.5px solid var(--gray-500);
+      border-radius: 20px;
+      color: var(--gray-100);
+      font-family: var(--font);
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: all var(--transition);
+      white-space: nowrap;
+    }
+    .filter-btn:hover {
+      border-color: var(--orange);
+      color: var(--orange);
+    }
+    .filter-btn.active {
+      background: var(--red);
+      border-color: var(--red);
+      color: #fff;
+      box-shadow: 0 2px 12px rgba(230,57,70,0.35);
+    }
+
+    /* ─── STATS BAR ─── */
+    #stats-bar {
+      font-size: 0.75rem;
+      color: var(--gray-300);
+      margin-bottom: 10px;
+      padding: 0 2px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #stats-bar span.count {
+      font-weight: 800;
+      color: var(--amber);
+    }
+
+    /* ─── RESULTS LIST ─── */
+    #results-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .patient-card {
+      background: var(--gray-750);
+      border: 1.5px solid var(--gray-600);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 10px;
+      align-items: center;
+    }
+    .patient-card:hover {
+      border-color: var(--red);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow);
+    }
+    .patient-card:active { transform: translateY(0); }
+
+    .card-name {
+      font-size: clamp(0.9rem, 3vw, 1.05rem);
+      font-weight: 800;
+      color: var(--white);
+      grid-column: 1;
+      line-height: 1.2;
+    }
+    .card-id {
+      font-size: 0.7rem;
+      color: var(--amber);
+      font-weight: 700;
+      font-family: monospace;
+      letter-spacing: 0.05em;
+    }
+    .card-hospital {
+      font-size: 0.75rem;
+      color: var(--gray-100);
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 2px;
+    }
+    .card-hospital .hosp-icon { opacity: 0.7; font-size: 0.85rem; }
+    .card-estado {
+      grid-column: 2;
+      grid-row: 1 / 3;
+      align-self: center;
+      justify-self: end;
+    }
+    .estado-badge {
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 0.65rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+    .estado-verde   { background: rgba(56,176,0,0.2);   color: #6dde2a; border: 1px solid rgba(56,176,0,0.4); }
+    .estado-rojo    { background: rgba(230,57,70,0.2);   color: #ff7b86; border: 1px solid rgba(230,57,70,0.4); }
+    .estado-naranja { background: rgba(244,162,97,0.2);  color: #ffc08a; border: 1px solid rgba(244,162,97,0.4); }
+    .estado-gris    { background: rgba(139,143,168,0.15); color: var(--gray-300); border: 1px solid var(--gray-600); }
+
+    /* ─── EMPTY / NO-DATA STATES ─── */
+    .empty-state {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--gray-300);
+    }
+    .empty-state .empty-icon { font-size: 3rem; margin-bottom: 12px; opacity: 0.6; }
+    .empty-state h2 { font-size: 1rem; color: var(--gray-100); margin-bottom: 6px; }
+    .empty-state p  { font-size: 0.82rem; line-height: 1.6; }
+
+    /* ─── MODAL ─── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 200;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.22s ease;
+    }
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: all;
+    }
+    .modal-box {
+      background: var(--gray-800);
+      border-top: 3px solid var(--red);
+      border-radius: var(--radius) var(--radius) 0 0;
+      padding: 24px 20px 36px;
+      width: 100%;
+      max-width: 600px;
+      max-height: 92vh;
+      overflow-y: auto;
+      transform: translateY(40px);
+      transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    .modal-overlay.open .modal-box { transform: translateY(0); }
+
+    .modal-handle {
+      width: 40px; height: 4px;
+      background: var(--gray-500);
+      border-radius: 2px;
+      margin: 0 auto 20px;
+    }
+    .modal-name {
+      font-size: clamp(1.3rem, 5vw, 1.8rem);
+      font-weight: 900;
+      color: var(--white);
+      line-height: 1.1;
+      margin-bottom: 4px;
+    }
+    .modal-cedula {
+      font-size: 0.85rem;
+      color: var(--amber);
+      font-family: monospace;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      margin-bottom: 16px;
+    }
+    .modal-estado-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .modal-estado-badge {
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 0.85rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .modal-divider {
+      height: 1px;
+      background: var(--gray-600);
+      margin: 16px 0;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 400px) {
+      .info-grid { grid-template-columns: 1fr; }
+    }
+    .info-card {
+      background: var(--gray-750);
+      border: 1px solid var(--gray-600);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+    }
+    .info-card.full { grid-column: 1 / -1; }
+    .info-card-label {
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      color: var(--gray-300);
+      margin-bottom: 4px;
+    }
+    .info-card-value {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--white);
+      word-break: break-word;
+    }
+    .info-card-value.highlight {
+      color: var(--orange);
+      font-size: 1.05rem;
+    }
+    .info-card-value.cama {
+      color: var(--amber);
+      font-size: 1.1rem;
+    }
+    .modal-close {
+      margin-top: 20px;
+      width: 100%;
+      background: var(--gray-700);
+      border: 1.5px solid var(--gray-500);
+      border-radius: var(--radius-sm);
+      color: var(--gray-100);
+      font-family: var(--font);
+      font-size: 0.9rem;
+      font-weight: 700;
+      padding: 13px;
+      cursor: pointer;
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .modal-close:hover {
+      background: var(--gray-600);
+      border-color: var(--gray-300);
+    }
+
+    /* ─── LOADING SPINNER ─── */
+    .spinner-wrap {
+      text-align: center;
+      padding: 40px 0;
+      display: none;
+    }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 4px solid var(--gray-600);
+      border-top-color: var(--red);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── TOAST NOTIFICATION ─── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--gray-600);
+      color: var(--white);
+      border-radius: 24px;
+      padding: 10px 22px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      z-index: 300;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+      opacity: 0;
+      pointer-events: none;
+      white-space: nowrap;
+      max-width: 90vw;
+      text-align: center;
+    }
+    #toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+    #toast.success { background: var(--green); }
+    #toast.error   { background: var(--red-dark); }
+
+    /* ─── RESPONSIVE ─── */
+    @media (min-width: 600px) {
+      .modal-overlay {
+        align-items: center;
+        padding: 20px;
+      }
+      .modal-box {
+        border-radius: var(--radius);
+        border-top: none;
+        border-left: 3px solid var(--red);
+        max-height: 88vh;
+      }
+    }
+
+    /* ─── SCROLLBAR ─── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--gray-500); border-radius: 3px; }
+
+    /* highlight match */
+    .hl { background: rgba(249,199,79,0.25); color: var(--amber); border-radius: 2px; padding: 0 1px; }
+  </style>
+</head>
+<body>
+
+<!-- ─── HEADER ─── -->
+<header>
+  <div class="header-icon">🆘</div>
+  <div class="header-text">
+    <h1>Búsqueda de Personas — Sismo La Guaira 2026</h1>
+    <p>Para familiares y rescatistas · Acceso a información de hospitalizados</p>
+  </div>
+  <div class="header-badge" id="header-count">Cargando…</div>
+</header>
+
+<!-- ─── MAIN ─── -->
+<main>
+
+  <!-- UPLOAD ZONE -->
+  <div class="upload-section" id="upload-zone" title="Haz clic o arrastra el archivo Excel aquí">
+    <input type="file" id="file-input" accept=".xlsx,.xls" aria-label="Seleccionar archivo Excel" />
+    <div class="upload-icon" id="upload-icon">📂</div>
+    <div class="upload-title" id="upload-title">Cargar / Actualizar Lista de Personas</div>
+    <div class="upload-sub" id="upload-sub">
+      Arrastra y suelta el archivo Excel aquí,<br>o haz clic para seleccionarlo<br>
+      <strong style="color:var(--orange)">Archivo esperado: Terremoto Venezuela - Consolidado de personas de todos los archivos.xlsx</strong>
+    </div>
+    <div id="load-status">✅ Lista cargada correctamente</div>
+  </div>
+
+  <!-- SPINNER -->
+  <div class="spinner-wrap" id="spinner">
+    <div class="spinner"></div>
+    <p style="color:var(--gray-300);font-size:0.8rem;">Procesando archivo…</p>
+  </div>
+
+  <!-- SEARCH -->
+  <div class="search-wrap">
+    <span class="search-icon">🔍</span>
+    <input
+      type="search"
+      id="search-input"
+      placeholder="Buscar por cédula, nombre o apellido…"
+      autocomplete="off"
+      autocorrect="off"
+      autocapitalize="off"
+      spellcheck="false"
+      aria-label="Campo de búsqueda"
+      disabled
+    />
+    <button class="clear-btn" id="clear-btn" aria-label="Limpiar búsqueda">✕</button>
+  </div>
+
+  <!-- FILTERS -->
+  <div class="filters-wrap" id="filters-wrap" style="display:none">
+    <div class="filters-label">📍 Filtrar por hospital / centro</div>
+    <div class="filters-scroll" id="filters-container"></div>
+  </div>
+
+  <!-- STATS BAR -->
+  <div id="stats-bar" style="display:none"></div>
+
+  <!-- RESULTS -->
+  <div id="results-list"></div>
+
+  <!-- EMPTY INITIAL STATE -->
+  <div class="empty-state" id="empty-initial">
+    <div class="empty-icon">📋</div>
+    <h2>Carga el archivo Excel para comenzar</h2>
+    <p>
+      Haz clic en el recuadro de arriba y selecciona el archivo consolidado.<br>
+      Una vez cargado, podrás buscar personas por nombre, apellido o cédula.
+    </p>
+    <p style="margin-top:14px;font-size:0.72rem;color:var(--gray-300)">
+      ⚠️ Ningún dato se envía a internet. Todo se procesa en tu dispositivo.
+    </p>
+  </div>
+
+</main>
+
+<!-- ─── MODAL ─── -->
+<div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-name">
+  <div class="modal-box" id="modal-box">
+    <div class="modal-handle"></div>
+    <div class="modal-name" id="modal-name"></div>
+    <div class="modal-cedula" id="modal-cedula"></div>
+
+    <div class="modal-estado-row" id="modal-estado-row"></div>
+
+    <div class="modal-divider"></div>
+    <div class="info-grid" id="modal-info-grid"></div>
+
+    <button class="modal-close" id="modal-close">Cerrar ✕</button>
+  </div>
+</div>
+
+<!-- ─── TOAST ─── -->
+<div id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════
+//  APP STATE
+// ════════════════════════════════════════════
+let allPatients = [];
+let filteredPatients = [];
+let activeHospital = '__ALL__';
+let searchQuery = '';
+let toastTimer = null;
+
+// Column mapping (0-indexed)
+const COL = {
+  apellidos:    0,  // A
+  nombres:      1,  // B
+  cedula:       2,  // C
+  edad:         3,  // D
+  menor:        4,  // E
+  sexo:         5,  // F
+  hospital:     6,  // G
+  area:         7,  // H
+  cama:         8,  // I
+  procedencia:  9,  // J
+  diagnostico:  10, // K
+  estado:       11, // L
+  fechaReg:     12, // M
+  hora:         13, // N
+  familiar:     14, // O
+  fuente:       15, // P
+  comentarios:  16  // Q
+};
+
+// ════════════════════════════════════════════
+//  DOM REFS
+// ════════════════════════════════════════════
+const fileInput       = document.getElementById('file-input');
+const uploadZone      = document.getElementById('upload-zone');
+const uploadIcon      = document.getElementById('upload-icon');
+const uploadTitle     = document.getElementById('upload-title');
+const uploadSub       = document.getElementById('upload-sub');
+const loadStatus      = document.getElementById('load-status');
+const spinner         = document.getElementById('spinner');
+const searchInput     = document.getElementById('search-input');
+const clearBtn        = document.getElementById('clear-btn');
+const filtersWrap     = document.getElementById('filters-wrap');
+const filtersContainer= document.getElementById('filters-container');
+const statsBar        = document.getElementById('stats-bar');
+const resultsList     = document.getElementById('results-list');
+const emptyInitial    = document.getElementById('empty-initial');
+const headerCount     = document.getElementById('header-count');
+const modalOverlay    = document.getElementById('modal-overlay');
+const modalName       = document.getElementById('modal-name');
+const modalCedula     = document.getElementById('modal-cedula');
+const modalEstadoRow  = document.getElementById('modal-estado-row');
+const modalInfoGrid   = document.getElementById('modal-info-grid');
+const modalClose      = document.getElementById('modal-close');
+const toast           = document.getElementById('toast');
+
+// ════════════════════════════════════════════
+//  FILE LOADING
+// ════════════════════════════════════════════
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) loadExcel(file);
+});
+
+uploadZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  uploadZone.classList.add('dragover');
+});
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) loadExcel(file);
+});
+
+function loadExcel(file) {
+  if (!file.name.match(/\.(xlsx|xls)$/i)) {
+    showToast('❌ Solo se aceptan archivos Excel (.xlsx o .xls)', 'error');
+    return;
+  }
+  spinner.style.display = 'block';
+  emptyInitial.style.display = 'none';
+  resultsList.innerHTML = '';
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array', cellDates: true });
+      const wsName = wb.SheetNames[0];
+      const ws = wb.Sheets[wsName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false });
+
+      // Remove header row, filter empty rows
+      const dataRows = rows.slice(1).filter(r => r.some(c => c !== null && c !== ''));
+
+      allPatients = dataRows.map((r, idx) => ({
+        id: idx,
+        apellidos:   clean(r[COL.apellidos]),
+        nombres:     clean(r[COL.nombres]),
+        cedula:      clean(r[COL.cedula]),
+        edad:        clean(r[COL.edad]),
+        menor:       clean(r[COL.menor]),
+        sexo:        clean(r[COL.sexo]),
+        hospital:    clean(r[COL.hospital]),
+        area:        clean(r[COL.area]),
+        cama:        clean(r[COL.cama]),
+        procedencia: clean(r[COL.procedencia]),
+        diagnostico: clean(r[COL.diagnostico]),
+        estado:      clean(r[COL.estado]),
+        fechaReg:    clean(r[COL.fechaReg]),
+        hora:        clean(r[COL.hora]),
+        familiar:    clean(r[COL.familiar]),
+        fuente:      clean(r[COL.fuente]),
+        comentarios: clean(r[COL.comentarios]),
+      }));
+
+      spinner.style.display = 'none';
+      onDataLoaded(file.name);
+    } catch (err) {
+      spinner.style.display = 'none';
+      showToast('❌ Error al procesar el archivo. Verifica que sea un Excel válido.', 'error');
+      console.error(err);
+    }
+  };
+  reader.onerror = () => {
+    spinner.style.display = 'none';
+    showToast('❌ No se pudo leer el archivo.', 'error');
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function clean(val) {
+  if (val === null || val === undefined) return '';
+  return String(val).trim();
+}
+
+function onDataLoaded(filename) {
+  // Update upload zone
+  uploadZone.classList.add('loaded');
+  uploadIcon.textContent = '✅';
+  uploadTitle.textContent = filename;
+  uploadSub.style.display = 'none';
+  loadStatus.style.display = 'block';
+
+  // Enable search
+  searchInput.disabled = false;
+  searchInput.focus();
+
+  // Build hospital filters
+  buildFilters();
+
+  // Show UI
+  filtersWrap.style.display = 'block';
+  statsBar.style.display = 'flex';
+  headerCount.textContent = `${allPatients.length.toLocaleString('es')} personas`;
+
+  // Initial render (no query)
+  applyFilters();
+
+  showToast(`✅ ${allPatients.length.toLocaleString('es')} personas cargadas`, 'success');
+}
+
+// ════════════════════════════════════════════
+//  FILTER CHIPS
+// ════════════════════════════════════════════
+function buildFilters() {
+  const hospitalMap = {};
+  allPatients.forEach(p => {
+    const h = p.hospital || 'Sin Centro';
+    hospitalMap[h] = (hospitalMap[h] || 0) + 1;
+  });
+
+  const sorted = Object.entries(hospitalMap)
+    .sort((a, b) => b[1] - a[1]);
+
+  filtersContainer.innerHTML = '';
+
+  // "Todos" button
+  const allBtn = createFilterBtn('Todos', allPatients.length, '__ALL__');
+  filtersContainer.appendChild(allBtn);
+
+  sorted.forEach(([name, count]) => {
+    const btn = createFilterBtn(name, count, name);
+    filtersContainer.appendChild(btn);
+  });
+}
+
+function createFilterBtn(label, count, value) {
+  const btn = document.createElement('button');
+  btn.className = 'filter-btn' + (value === activeHospital ? ' active' : '');
+  btn.dataset.value = value;
+  btn.innerHTML = `${label} <span style="opacity:0.65;font-weight:400">(${count})</span>`;
+  btn.addEventListener('click', () => {
+    activeHospital = value;
+    document.querySelectorAll('.filter-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.value === value);
+    });
+    applyFilters();
+  });
+  return btn;
+}
+
+// ════════════════════════════════════════════
+//  SEARCH + FILTER LOGIC
+// ════════════════════════════════════════════
+searchInput.addEventListener('input', () => {
+  searchQuery = searchInput.value.trim();
+  clearBtn.style.display = searchQuery ? 'block' : 'none';
+  applyFilters();
+});
+
+clearBtn.addEventListener('click', () => {
+  searchInput.value = '';
+  searchQuery = '';
+  clearBtn.style.display = 'none';
+  searchInput.focus();
+  applyFilters();
+});
+
+function normalize(str) {
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, ''); // strip accents
+}
+
+function applyFilters() {
+  const q = normalize(searchQuery);
+
+  filteredPatients = allPatients.filter(p => {
+    // Hospital filter
+    if (activeHospital !== '__ALL__') {
+      const ph = p.hospital || 'Sin Centro';
+      if (ph !== activeHospital) return false;
+    }
+
+    // Text search
+    if (q.length < 1) return true;
+    const haystack = normalize(
+      `${p.apellidos} ${p.nombres} ${p.cedula} ${p.hospital}`
+    );
+    return haystack.includes(q);
+  });
+
+  renderStats();
+  renderResults();
+}
+
+// ════════════════════════════════════════════
+//  RENDER STATS
+// ════════════════════════════════════════════
+function renderStats() {
+  if (!allPatients.length) { statsBar.innerHTML = ''; return; }
+
+  const total = filteredPatients.length;
+  const label = searchQuery
+    ? `Resultados para "<strong>${escHtml(searchQuery)}</strong>"`
+    : activeHospital !== '__ALL__'
+      ? `Hospital: <strong>${escHtml(activeHospital)}</strong>`
+      : 'Todos los registros';
+
+  statsBar.innerHTML = `<span class="count">${total.toLocaleString('es')}</span> personas · ${label}`;
+}
+
+// ════════════════════════════════════════════
+//  RENDER RESULTS
+// ════════════════════════════════════════════
+const PAGE_SIZE = 60;
+let shownCount = 0;
+
+function renderResults() {
+  resultsList.innerHTML = '';
+  shownCount = 0;
+
+  if (!filteredPatients.length) {
+    resultsList.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <h2>Sin resultados</h2>
+        <p>No se encontraron personas que coincidan con "<strong>${escHtml(searchQuery)}</strong>".<br>
+        Intenta con otro nombre, apellido o número de cédula.</p>
+      </div>`;
+    return;
+  }
+
+  renderPage();
+}
+
+function renderPage() {
+  const slice = filteredPatients.slice(shownCount, shownCount + PAGE_SIZE);
+  slice.forEach(p => {
+    resultsList.appendChild(buildCard(p));
+  });
+  shownCount += slice.length;
+
+  // Add "load more" button if needed
+  const existing = document.getElementById('load-more');
+  if (existing) existing.remove();
+
+  if (shownCount < filteredPatients.length) {
+    const btn = document.createElement('button');
+    btn.id = 'load-more';
+    btn.style.cssText = `
+      display: block; width: 100%; margin-top: 12px;
+      background: var(--gray-700); border: 1.5px solid var(--gray-500);
+      border-radius: var(--radius-sm); color: var(--gray-100);
+      font-family: var(--font); font-size: 0.85rem; font-weight: 700;
+      padding: 12px; cursor: pointer; transition: background 0.18s;
+    `;
+    btn.textContent = `Ver más (${filteredPatients.length - shownCount} restantes)`;
+    btn.onmouseover = () => btn.style.background = 'var(--gray-600)';
+    btn.onmouseout  = () => btn.style.background = 'var(--gray-700)';
+    btn.onclick = renderPage;
+    resultsList.appendChild(btn);
+  }
+}
+
+function buildCard(p) {
+  const card = document.createElement('div');
+  card.className = 'patient-card';
+  card.setAttribute('role', 'button');
+  card.setAttribute('tabindex', '0');
+  card.setAttribute('aria-label', `Ver detalles de ${p.apellidos} ${p.nombres}`);
+
+  const fullName = [p.apellidos, p.nombres].filter(Boolean).join(', ');
+  const nameDisplay = searchQuery
+    ? highlightText(fullName, searchQuery)
+    : escHtml(fullName);
+
+  const cedulaDisplay = p.cedula
+    ? (searchQuery ? highlightText(p.cedula, searchQuery) : `C.I.: ${escHtml(p.cedula)}`)
+    : '<span style="color:var(--gray-300);font-size:0.7rem">Sin cédula</span>';
+
+  const hospital = p.hospital || 'Centro no especificado';
+  const area = p.area ? ` · ${p.area}` : '';
+  const cama = p.cama ? ` · Cama/Piso: ${p.cama}` : '';
+
+  const estadoBadge = buildEstadoBadge(p.estado, 'estado-badge');
+
+  card.innerHTML = `
+    <div class="card-name">${nameDisplay}</div>
+    <div class="card-estado">${estadoBadge}</div>
+    <div class="card-id">${cedulaDisplay}</div>
+    <div class="card-hospital">
+      <span class="hosp-icon">🏥</span>
+      <span>${escHtml(hospital)}${escHtml(area)}${escHtml(cama)}</span>
+    </div>`;
+
+  card.addEventListener('click', () => openModal(p));
+  card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') openModal(p); });
+  return card;
+}
+
+// ════════════════════════════════════════════
+//  MODAL
+// ════════════════════════════════════════════
+function openModal(p) {
+  const fullName = [p.apellidos, p.nombres].filter(Boolean).join(', ') || 'Nombre no registrado';
+  modalName.textContent = fullName;
+  modalCedula.textContent = p.cedula ? `Cédula / ID: ${p.cedula}` : '⚠️ Sin cédula registrada';
+
+  // Estado row
+  const badge = buildEstadoBadge(p.estado, 'modal-estado-badge');
+  const edadSexo = [
+    p.edad ? `${p.edad} años` : null,
+    p.sexo ? (p.sexo.toUpperCase() === 'F' ? '♀ Femenino' : p.sexo.toUpperCase() === 'M' ? '♂ Masculino' : p.sexo) : null,
+    p.menor === 'S' ? '👶 Menor de edad' : null
+  ].filter(Boolean).join(' · ');
+
+  modalEstadoRow.innerHTML = badge + (edadSexo ? `<span style="font-size:0.8rem;color:var(--gray-300)">${escHtml(edadSexo)}</span>` : '');
+
+  // Info cards
+  const fields = [
+    { label: '🏥 Hospital / Centro',  value: p.hospital,    full: true,  cls: 'highlight' },
+    { label: '📍 Área / Zona',        value: p.area,        full: false, cls: '' },
+    { label: '🛏️ Piso / Cama',        value: p.cama,        full: false, cls: 'cama' },
+    { label: '🩺 Diagnóstico',        value: p.diagnostico, full: true,  cls: '' },
+    { label: '🏠 Procedencia',        value: p.procedencia, full: false, cls: '' },
+    { label: '👨‍👩‍👧 Familiar',           value: p.familiar,    full: false, cls: '' },
+    { label: '📅 Fecha de Registro',  value: p.fechaReg ? (p.fechaReg + (p.hora ? ' · ' + p.hora : '')) : '', full: false, cls: '' },
+    { label: '📝 Comentarios',        value: p.comentarios, full: true,  cls: '' },
+  ];
+
+  modalInfoGrid.innerHTML = fields
+    .filter(f => f.value)
+    .map(f => `
+      <div class="info-card ${f.full ? 'full' : ''}">
+        <div class="info-card-label">${f.label}</div>
+        <div class="info-card-value ${f.cls}">${escHtml(f.value)}</div>
+      </div>`).join('');
+
+  if (!modalInfoGrid.innerHTML) {
+    modalInfoGrid.innerHTML = '<div class="info-card full"><div class="info-card-value" style="color:var(--gray-300)">Sin información adicional registrada.</div></div>';
+  }
+
+  modalOverlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  modalOverlay.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+modalClose.addEventListener('click', closeModal);
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) closeModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal();
+});
+
+// ════════════════════════════════════════════
+//  HELPERS
+// ════════════════════════════════════════════
+function escHtml(str) {
+  return String(str || '')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+function highlightText(text, query) {
+  const safe = escHtml(text);
+  const safeQ = normalize(escHtml(query));
+  const pattern = new RegExp(safeQ.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
+
+  let result = '';
+  let lastIdx = 0;
+  const normSafe = normalize(safe);
+  let match;
+  const tempRe = new RegExp(safeQ.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
+
+  // Work on normalized version to find positions
+  const positions = [];
+  let m;
+  const re2 = new RegExp(normalize(query).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
+  while ((m = re2.exec(normalize(text))) !== null) {
+    positions.push([m.index, m.index + m[0].length]);
+  }
+
+  if (!positions.length) return safe;
+
+  let out = '';
+  let last = 0;
+  for (const [start, end] of positions) {
+    out += escHtml(text.slice(last, start));
+    out += `<mark class="hl">${escHtml(text.slice(start, end))}</mark>`;
+    last = end;
+  }
+  out += escHtml(text.slice(last));
+  return out;
+}
+
+function buildEstadoBadge(estado, cls) {
+  if (!estado) return `<span class="${cls} estado-gris">En lista</span>`;
+  const e = estado.toUpperCase();
+  let variant = 'estado-gris';
+  let display = estado;
+
+  if (e.includes('FALLEC') || e.includes('OBITO')) {
+    variant = 'estado-rojo';
+    display = '💔 ' + estado;
+  } else if (e.includes('ALTA') || e.includes('MEJOR')) {
+    variant = 'estado-verde';
+    display = '✅ ' + estado;
+  } else if (e.includes('TRASLAD') || e.includes('FUGAD') || e.includes('EGRES')) {
+    variant = 'estado-naranja';
+    display = '🚑 ' + estado;
+  } else if (['INGRESO','QX','DESCOMPENS','CRITI'].some(k => e.includes(k))) {
+    variant = 'estado-rojo';
+    display = '🔴 ' + estado;
+  } else {
+    variant = 'estado-gris';
+  }
+
+  return `<span class="${cls} ${variant}">${escHtml(display)}</span>`;
+}
+
+function showToast(msg, type = '') {
+  toast.textContent = msg;
+  toast.className = 'show' + (type ? ' ' + type : '');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.className = ''; }, 3500);
+}
+</script>
+</body>
+</html>
